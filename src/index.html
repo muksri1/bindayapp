@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bin Day — Blacktown Council</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #111318;
+      --surface: #1c1f2b;
+      --border: rgba(255,255,255,0.07);
+      --text: #f0f0ef;
+      --muted: #5a6070;
+      --accent: #4f8ef7;
+    }
+
+    /* ── Kiosk hardening (issue #3): no scroll, no cursor ── */
+    html, body { height: 100%; overflow: hidden; }
+    * { cursor: none; }                                   /* hide the mouse pointer in-app */
+    ::-webkit-scrollbar { width: 0; height: 0; display: none; }   /* hide scrollbars (WebKit/Chromium) */
+    html { -ms-overflow-style: none; scrollbar-width: none; }     /* Firefox/Edge fallback */
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ─── Setup screen ─── */
+    #setup {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+      overflow-y: auto;               /* allow scrolling the form if screen is tiny — hidden bar */
+    }
+    .setup-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 460px;
+    }
+    .setup-card h1 { font-size: 1.2rem; font-weight: 600; margin-bottom: 0.25rem; }
+    .setup-card > p { font-size: 0.85rem; color: var(--muted); margin-bottom: 1.5rem; }
+    label { display: block; font-size: 0.78rem; color: var(--muted); margin-bottom: 0.35rem; }
+    input[type="text"], select {
+      width: 100%;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.9rem;
+      padding: 0.55rem 0.8rem;
+      margin-bottom: 0.9rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input[type="text"]:focus, select:focus { border-color: var(--accent); }
+    input[type="text"]::placeholder { color: var(--muted); }
+    button.primary {
+      width: 100%;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      padding: 0.6rem 1rem;
+      cursor: none;
+      transition: opacity 0.15s;
+    }
+    button.primary:hover { opacity: 0.85; }
+    button.primary:disabled { opacity: 0.4; }
+    .proxy-note {
+      font-size: 0.72rem;
+      color: var(--muted);
+      background: rgba(79,142,247,0.07);
+      border: 1px solid rgba(79,142,247,0.18);
+      border-radius: 8px;
+      padding: 0.6rem 0.75rem;
+      margin-top: 1rem;
+      line-height: 1.6;
+    }
+    .err { font-size: 0.78rem; color: #f87171; margin-top: 0.5rem; display: none; }
+    .err.show { display: block; }
+
+    /* ─── Display screen ─── */
+    #display { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .top-bar .addr { font-size: 0.78rem; color: var(--muted); }
+    .top-bar .now  { font-size: 0.78rem; color: var(--muted); }
+    button.ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.72rem;
+      padding: 0.28rem 0.7rem;
+      border-radius: 6px;
+      cursor: none;
+      transition: border-color 0.15s;
+    }
+    button.ghost:hover { border-color: rgba(255,255,255,0.2); color: var(--text); }
+
+    /* ─── Main stage ─── */
+    .stage {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem 2rem 1rem;
+      gap: 1.5rem;
+      overflow: hidden;
+    }
+
+    .stage-label {
+      font-size: clamp(0.8rem, 2vw, 1rem);
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      text-align: center;
+    }
+    .stage-label.tonight { color: #fcd34d; font-weight: 600; }
+
+    /* ─── Bin illustrations ─── */
+    .bins-row {
+      display: flex;
+      gap: clamp(1.5rem, 5vw, 4rem);
+      align-items: flex-end;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .bin-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+      opacity: 1;
+      transition: opacity 0.4s;
+    }
+    .bin-wrap.skip { opacity: 0.18; }
+
+    .bin-svg { width: clamp(90px, 14vw, 160px); height: auto; }
+
+    /* ── Gentle pulse/glow for bins to put out tonight (issue #1) ── */
+    @keyframes binPulse {
+      0%, 100% { transform: translateY(0)      scale(1);    filter: drop-shadow(0 0 0 rgba(252,211,77,0)); }
+      50%      { transform: translateY(-6px)   scale(1.04); filter: drop-shadow(0 0 18px rgba(252,211,77,0.85)); }
+    }
+    .bin-wrap.flash .bin-svg { animation: binPulse 1.6s ease-in-out infinite; }
+    .bin-wrap.flash .out-badge.go { animation: badgePulse 1.6s ease-in-out infinite; }
+    @keyframes badgePulse {
+      0%, 100% { background: rgba(255,255,255,0.1); color: #a3e0a3; }
+      50%      { background: rgba(252,211,77,0.35); color: #fff; }
+    }
+
+    .bin-label-row {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+    }
+    .bin-name { font-size: clamp(0.85rem, 2vw, 1.1rem); font-weight: 600; }
+    .bin-type { font-size: clamp(0.7rem, 1.5vw, 0.85rem); color: var(--muted); }
+
+    .out-badge {
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 0.2rem 0.6rem;
+      border-radius: 99px;
+      margin-top: 2px;
+    }
+    .out-badge.go   { background: rgba(255,255,255,0.1); color: #a3e0a3; }
+    .out-badge.skip { background: rgba(255,255,255,0.04); color: var(--muted); }
+
+    /* ─── Countdown ─── */
+    .countdown-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .countdown-ring-wrap {
+      position: relative;
+      width: clamp(100px, 16vw, 150px);
+      height: clamp(100px, 16vw, 150px);
+    }
+    .countdown-ring-wrap svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+    .countdown-ring-track { fill: none; stroke: rgba(255,255,255,0.06); }
+    .countdown-ring-fill  { fill: none; stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset 1s linear; }
+    .countdown-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+    }
+    .countdown-days {
+      font-size: clamp(1.6rem, 4vw, 2.6rem);
+      font-weight: 700;
+      line-height: 1;
+    }
+    .countdown-unit { font-size: clamp(0.6rem, 1.2vw, 0.75rem); color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+    .countdown-sub  { font-size: clamp(0.62rem, 1.2vw, 0.75rem); color: var(--muted); }
+
+    /* Collection-day message */
+    .collection-msg {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+      text-align: center;
+    }
+    .collection-msg .big { font-size: clamp(1.4rem, 3.5vw, 2rem); font-weight: 700; }
+    .collection-msg .sub { font-size: 0.85rem; color: var(--muted); }
+
+    .bottom-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.6rem 1.5rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    @media (max-width: 500px) {
+      .bins-row { gap: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ─── Setup ─── -->
+<div id="setup">
+  <div class="setup-card">
+    <h1>🗑 Bin day reminder</h1>
+    <p>Set up your Blacktown Council fortnightly bin schedule. The calculation runs entirely on-device — no network needed once configured.</p>
+
+    <label for="addr">Street address <span style="opacity:0.6">(shown on screen — optional)</span></label>
+    <input type="text" id="addr" placeholder="86 Nabthorpe Parade, Nirimba Fields NSW 2762" />
+
+    <label for="coll-day">Collection day</label>
+    <select id="coll-day">
+      <option value="">— select —</option>
+      <option value="1">Monday</option>
+      <option value="2">Tuesday</option>
+      <option value="3">Wednesday</option>
+      <option value="4">Thursday</option>
+      <option value="5">Friday</option>
+    </select>
+
+    <label for="yellow-ref">A recent date the Yellow (recycling) bin was collected</label>
+    <input type="text" id="yellow-ref" placeholder="YYYY-MM-DD  e.g. 2026-08-04" />
+
+    <button class="primary" id="save-btn" onclick="saveSchedule()">Save my bin schedule</button>
+    <p class="err" id="err"></p>
+    <div class="proxy-note">
+      <strong>Optional council API:</strong> if <code>proxy.py</code> is running and a real council
+      endpoint is available, the app will use it to double-check the schedule. Blacktown does not currently
+      publish a public API, so the on-device fortnightly calculation is the source of truth.
+    </div>
+  </div>
+</div>
+
+<!-- ─── Display ─── -->
+<div id="display">
+  <div class="top-bar">
+    <span class="addr" id="addr-label"></span>
+    <span class="now" id="now-label"></span>
+    <button class="ghost" onclick="resetApp()">Change address</button>
+  </div>
+
+  <div class="stage" id="stage">
+
+    <div class="stage-label" id="stage-label"></div>
+
+    <!-- Bin illustrations -->
+    <div class="bins-row" id="bins-row"></div>
+
+    <!-- Countdown ring -->
+    <div class="countdown-wrap" id="countdown-wrap">
+      <div class="countdown-ring-wrap">
+        <svg viewBox="0 0 120 120">
+          <circle class="countdown-ring-track" cx="60" cy="60" r="52" stroke-width="6"/>
+          <circle class="countdown-ring-fill"  cx="60" cy="60" r="52" stroke-width="6"
+            id="ring-fill" stroke-dasharray="326.7" stroke-dashoffset="0"/>
+        </svg>
+        <div class="countdown-center">
+          <span class="countdown-days" id="cd-days">0</span>
+          <span class="countdown-unit">days</span>
+        </div>
+      </div>
+      <div class="countdown-sub" id="cd-sub"></div>
+    </div>
+
+    <!-- Collection day message -->
+    <div class="collection-msg" id="collection-msg">
+      <div class="big">🚛 Collection day!</div>
+      <div class="sub">Bins are being collected this morning.</div>
+    </div>
+
+  </div>
+
+  <div class="bottom-bar">
+    <span id="collection-date-label"></span>
+    <span id="clock"></span>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+//  Blacktown Bin Day Display — v2
+//  Key change vs v1: the display DERIVES the schedule live from `now` on every
+//  tick, instead of freezing a single "nextCollection" date at load time. That
+//  frozen date was what went stale after a Tuesday pickup and forced a Pi
+//  restart (issue #2). There is now no cached date that can go stale.
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── SVG bin illustrations ──────────────────────────────────────────────────
+function binSVG(bodyColor, lidColor, stripeColor, labelText) {
+  return `<svg class="bin-svg" viewBox="0 0 100 140" xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx="50" cy="133" rx="30" ry="5" fill="rgba(0,0,0,0.35)"/>
+    <circle cx="30" cy="126" r="7" fill="#222" stroke="#444" stroke-width="1.5"/>
+    <circle cx="30" cy="126" r="3" fill="#555"/>
+    <circle cx="70" cy="126" r="7" fill="#222" stroke="#444" stroke-width="1.5"/>
+    <circle cx="70" cy="126" r="3" fill="#555"/>
+    <rect x="14" y="48" width="72" height="76" rx="6" fill="${bodyColor}"/>
+    <rect x="14" y="88" width="72" height="14" fill="${stripeColor}" opacity="0.55"/>
+    <rect x="20" y="42" width="60" height="5" rx="2.5" fill="${lidColor}" opacity="0.7"/>
+    <rect x="10" y="26" width="80" height="22" rx="5" fill="${lidColor}"/>
+    <rect x="14" y="29" width="70" height="6" rx="3" fill="rgba(255,255,255,0.12)"/>
+    <rect x="38" y="8" width="24" height="20" rx="5" fill="none" stroke="${lidColor}" stroke-width="5"/>
+    <rect x="20" y="52" width="16" height="60" rx="4" fill="rgba(255,255,255,0.07)"/>
+    <text x="50" y="78" text-anchor="middle" font-family="-apple-system,sans-serif"
+          font-size="9" font-weight="700" fill="rgba(255,255,255,0.85)" letter-spacing="0.5">${labelText}</text>
+  </svg>`;
+}
+
+const BIN_DEFS = {
+  red:    { body: '#b91c1c', lid: '#dc2626', stripe: '#fca5a5', label: 'GENERAL', name: 'Red bin',    type: 'General waste' },
+  green:  { body: '#15803d', lid: '#16a34a', stripe: '#86efac', label: 'GARDEN',  name: 'Green bin',  type: 'Garden & food' },
+  yellow: { body: '#a16207', lid: '#ca8a04', stripe: '#fde047', label: 'RECYCLE', name: 'Yellow bin', type: 'Recycling'     },
+};
+
+// ── Config / constants ──────────────────────────────────────────────────────
+const PROXY        = 'http://localhost:3001/waste';
+const STORE_ADDR   = 'binday_address';
+const STORE_CFG    = 'binday_fallback_cfg';   // { collectionDow: 1-5, yellowRef: 'YYYY-MM-DD' }
+const DONE_HOUR    = 14;   // after this hour on collection day, the cycle rolls to next week
+const FLASH_HOUR   = 17;   // 5:00 PM — start pulsing put-out bins on the night before collection
+const DOW_NAMES    = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+let _tickTimer = null;
+
+// ── Date helpers ────────────────────────────────────────────────────────────
+function startOfDay(d) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
+
+function weekStart(d) {                       // Monday 00:00 of d's week
+  const dt = startOfDay(d);
+  dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7));
+  return dt;
+}
+function isYellowWeek(collectionDate, yellowRef) {
+  const weeks = Math.round((weekStart(collectionDate) - weekStart(yellowRef)) / (7 * 864e5));
+  return ((weeks % 2) + 2) % 2 === 0;         // even number of weeks from a known yellow week
+}
+
+// Returns the collection date for the CURRENT cycle: today if today is the
+// collection day and it isn't done yet; otherwise the next collection day.
+function currentOrNextCollection(now, collectionDow) {
+  const d = startOfDay(now);
+  let delta = (collectionDow - d.getDay() + 7) % 7;      // 0 if today is collection day
+  if (delta === 0) {
+    const cutoff = new Date(now); cutoff.setHours(DONE_HOUR, 0, 0, 0);
+    if (now >= cutoff) delta = 7;                         // pickup done → roll to next week
+  }
+  d.setDate(d.getDate() + delta);
+  return d;
+}
+
+// ── Config load/save ────────────────────────────────────────────────────────
+function getCfg() {
+  try { return JSON.parse(localStorage.getItem(STORE_CFG)) || null; }
+  catch { return null; }
+}
+
+// Optional best-effort council API check. If it ever returns real data it can
+// pre-fill the manual fields; it is NEVER required for the display to work.
+async function tryCouncilApi(addr) {
+  try {
+    const r = await fetch(`${PROXY}?address=${encodeURIComponent(addr)}`, { signal: AbortSignal.timeout(4000) });
+    if (!r.ok) return null;
+    const data = await r.json();
+    const events = (data.collections || []).map(e => ({ date: new Date(e.date), type: e.type }));
+    if (!events.length) return null;
+    return events;
+  } catch { return null; }
+}
+
+// ── Render / tick ───────────────────────────────────────────────────────────
+function renderDisplay(address) {
+  document.getElementById('setup').style.display = 'none';
+  const disp = document.getElementById('display');
+  disp.style.display = 'flex';
+  document.getElementById('addr-label').textContent = address || 'Blacktown Council';
+  if (_tickTimer) clearInterval(_tickTimer);
+  tick();
+  _tickTimer = setInterval(tick, 1000);
+}
+
+function tick() {
+  const cfg = getCfg();
+  if (!cfg) { resetApp(); return; }
+
+  const now  = new Date();
+  const dow  = now.getDay();
+  const hour = now.getHours();
+  const collectionDow = cfg.collectionDow;
+  const yellowRef     = new Date(cfg.yellowRef + 'T00:00:00');
+
+  // Everything below is derived from `now` — nothing is cached, so nothing goes stale.
+  const nextCollection = currentOrNextCollection(now, collectionDow);
+  const yellow    = isYellowWeek(nextCollection, yellowRef);
+  const putOutDow = (collectionDow + 6) % 7;                 // night before collection
+  const activeBins = yellow ? ['red','green','yellow'] : ['red','green'];
+
+  const collMidnight = startOfDay(nextCollection);
+  const msLeft   = collMidnight - now;
+  const daysLeft = Math.ceil(msLeft / 864e5);
+
+  const cutoff = new Date(now); cutoff.setHours(DONE_HOUR, 0, 0, 0);
+  const isCollectionMorning = (dow === collectionDow && now < cutoff);
+  const isPutOutNight       = (dow === putOutDow && hour >= FLASH_HOUR);
+
+  // ── Header / clock ──
+  document.getElementById('now-label').textContent =
+    now.toLocaleDateString('en-AU', { weekday:'short', day:'numeric', month:'short' }) +
+    ' · ' + now.toLocaleTimeString('en-AU', { hour:'2-digit', minute:'2-digit' });
+  document.getElementById('clock').textContent =
+    now.toLocaleTimeString('en-AU', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  document.getElementById('collection-date-label').textContent =
+    `Next collection: ${nextCollection.toLocaleDateString('en-AU', { weekday:'long', day:'numeric', month:'long' })}`;
+
+  // ── Stage label ──
+  const lbl = document.getElementById('stage-label');
+  lbl.classList.toggle('tonight', isPutOutNight);
+  if (isCollectionMorning) {
+    lbl.textContent = 'Collection morning';
+  } else if (dow === putOutDow) {
+    lbl.textContent = isPutOutNight ? '⚠ Put these bins out now' : 'Put these out tonight';
+  } else {
+    lbl.textContent = (yellow ? 'Red · Green · Yellow' : 'Red · Green') +
+      ` — out ${DOW_NAMES[putOutDow]} night`;
+  }
+
+  // ── Bins (flash the put-out bins on the put-out evening, issue #1) ──
+  const row = document.getElementById('bins-row');
+  row.innerHTML = ['red','green','yellow'].map(id => {
+    const def = BIN_DEFS[id];
+    const out = activeBins.includes(id);
+    const flash = out && isPutOutNight;
+    return `<div class="bin-wrap ${out ? '' : 'skip'} ${flash ? 'flash' : ''}">
+      ${binSVG(def.body, def.lid, def.stripe, def.label)}
+      <div class="bin-label-row">
+        <span class="bin-name">${def.name}</span>
+        <span class="bin-type">${def.type}</span>
+        <span class="out-badge ${out ? 'go' : 'skip'}">${out ? 'Put out' : 'Not this week'}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  // ── Countdown vs collection-morning message ──
+  const cw = document.getElementById('countdown-wrap');
+  const cm = document.getElementById('collection-msg');
+
+  if (isCollectionMorning) {
+    cw.style.display = 'none';
+    cm.style.display = 'flex';
+  } else {
+    cm.style.display = 'none';
+    cw.style.display = 'flex';
+
+    const prevColl = new Date(nextCollection); prevColl.setDate(prevColl.getDate() - 7);
+    const totalMs   = nextCollection - prevColl;            // always 7 days
+    const elapsedMs = now - prevColl;
+    const fraction  = Math.min(1, Math.max(0, 1 - elapsedMs / totalMs));
+    const circumference = 326.7;
+    document.getElementById('ring-fill').style.strokeDashoffset =
+      (circumference * (1 - fraction)).toFixed(1);
+
+    const cdDays = document.getElementById('cd-days');
+    const cdSub  = document.getElementById('cd-sub');
+
+    if (daysLeft <= 1 && dow === putOutDow) {
+      cdDays.textContent = '1';
+      cdSub.textContent  = isPutOutNight ? 'Put bins out now!' : 'Put bins out tonight';
+    } else if (daysLeft <= 1) {
+      cdDays.textContent = '1';
+      cdSub.textContent  = '1 day until collection';
+    } else {
+      const hrs = Math.floor(msLeft / 36e5);
+      cdDays.textContent = daysLeft;
+      cdSub.textContent  = `${hrs} hours until collection`;
+    }
+  }
+}
+
+// ── Setup handler ───────────────────────────────────────────────────────────
+async function saveSchedule() {
+  const addr      = document.getElementById('addr').value.trim();
+  const collDay   = document.getElementById('coll-day').value;
+  const yellowRef = document.getElementById('yellow-ref').value.trim();
+  const btn = document.getElementById('save-btn');
+
+  if (collDay === '') { showErr('Please choose your collection day.'); return; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(yellowRef)) { showErr('Enter a recent Yellow bin date as YYYY-MM-DD.'); return; }
+  const parsed = new Date(yellowRef + 'T00:00:00');
+  if (isNaN(parsed)) { showErr('That Yellow bin date is not valid.'); return; }
+
+  localStorage.setItem(STORE_CFG, JSON.stringify({ collectionDow: parseInt(collDay, 10), yellowRef }));
+  localStorage.setItem(STORE_ADDR, addr);
+
+  // Optional, non-blocking council API check (best effort only).
+  if (addr) { btn.disabled = true; btn.textContent = 'Saving…'; await tryCouncilApi(addr); btn.disabled = false; btn.textContent = 'Save my bin schedule'; }
+
+  renderDisplay(addr);
+}
+
+function showErr(m) {
+  const e = document.getElementById('err');
+  e.textContent = m; e.classList.add('show');
+}
+
+function resetApp() {
+  if (_tickTimer) clearInterval(_tickTimer);
+  document.getElementById('display').style.display = 'none';
+  document.getElementById('setup').style.display   = 'flex';
+  const cfg = getCfg();
+  document.getElementById('addr').value      = localStorage.getItem(STORE_ADDR) || '';
+  document.getElementById('coll-day').value  = cfg ? String(cfg.collectionDow) : '';
+  document.getElementById('yellow-ref').value = cfg ? cfg.yellowRef : '';
+}
+
+// ── Auto-restore on load ────────────────────────────────────────────────────
+(function init() {
+  const cfg = getCfg();
+  if (cfg && cfg.collectionDow != null && cfg.yellowRef) {
+    renderDisplay(localStorage.getItem(STORE_ADDR) || '');
+  } else {
+    resetApp();
+  }
+})();
+</script>
+</body>
+</html>

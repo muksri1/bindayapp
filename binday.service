@@ -1,0 +1,21 @@
+[Unit]
+Description=Blacktown Bin Day Display
+# Wait for the graphical session — Chromium needs a display to attach to.
+After=graphical.target
+Wants=graphical.target
+
+[Service]
+Type=simple
+User=muksri
+# Chromium can't find the display without these.
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/muksri/.Xauthority
+WorkingDirectory=/home/muksri/blacktown-bin-day
+# Give the desktop a moment to finish coming up before launching the kiosk.
+ExecStartPre=/bin/sleep 15
+ExecStart=/bin/bash /home/muksri/blacktown-bin-day/start.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target

@@ -1,0 +1,11 @@
+v2.0.0: live schedule, put-out flashing, kiosk cleanup, local-first calc
+
+- Fix stale display after pickup by deriving schedule live each tick (#2)
+- Add 5 PM-midnight pulsing put-out reminder (#1)
+- Hide cursor + scrollbars in kiosk; X11/Wayland cursor steps (#3)
+- Make on-device fortnightly calc the source of truth; confirm no public
+  Blacktown API; proxy now optional (#4)
+- Pi Zero 2W hardening: X11 switch, chromium binary auto-detect,
+  --no-memcheck + --password-store=basic, desktop autostart, 1GB swap,
+  cold-boot white-screen fix (server readiness wait + xdotool reload)
+- Docs: INSTALL, DEPLOY, DEPLOYMENT-NOTES, CHANGELOG

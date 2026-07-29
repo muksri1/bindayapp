@@ -1,34 +1,29 @@
-[README.md](https://github.com/user-attachments/files/29878373/README.md)
 # Blacktown Bin Day Display
 
-A minimal kiosk web app for Blacktown Council (NSW) residents. Shows which bins to put out on Monday evenings — pulling live collection schedules directly from the Council's waste services API so the fortnightly Yellow bin cycle is always accurate, for any address in the LGA.
-
-Built to run on a Raspberry Pi Zero 2W with a small HDMI display mounted near the front door or in the garage.
+A minimal kiosk web app for Blacktown Council (NSW) residents. Shows which bins to put out on Monday evenings and counts down to the next Tuesday pickup — running on a Raspberry Pi with a small HDMI display mounted near the front door or garage.
 
 ![Demo: Monday view showing Red, Green, and Yellow bins](docs/screenshot-monday.png)
 
+## What's new in v2
+
+- **Put-out reminder that pulses.** On the night before collection, from **5:00 PM to midnight**, the bins you need to leave out gently pulse and glow so you don't forget (or put the wrong ones out).
+- **No more restarts.** v1 froze a single "next collection" date at load, which went stale after each Tuesday pickup and needed a Pi reboot to fix. v2 **derives the schedule live every second from the current time**, so it rolls to the next cycle on its own and can never freeze on a past date.
+- **On-device fortnightly calculation is now the source of truth.** Blacktown does not publish a public bin-day API (see below), so the app computes the Red/Green/Yellow cycle locally from your collection day plus a known Yellow bin date. No network needed once configured.
+- **Cleaner kiosk.** The mouse cursor and scrollbars are hidden from inside the app, plus `--hide-scrollbars` on Chromium and updated cursor-hiding steps for both X11 and Wayland (Bookworm).
+
 ## How it works
 
-- On **Mondays**, the display shows exactly which bins to leave on the kerb that night, with clear visual status for each bin.
-- On **other days**, it shows when the next collection is and which bins will be needed.
-- Address is saved to `localStorage` — enter it once, never again.
-- A lightweight Flask proxy handles CORS when calling the Council API. Falls back to local fortnightly calculation if the proxy isn't reachable.
+- The app stores two things: your **collection day** (e.g. Tuesday) and a **recent date the Yellow bin was collected**. From those it computes the fortnightly cycle entirely on-device.
+- **Night before collection:** shows the exact bins to leave on the kerb, pulsing from 5 PM.
+- **Collection morning:** shows a "Collection day" message until early afternoon.
+- **After ~2 PM on collection day:** automatically advances to next week's cycle.
+- An optional Flask proxy (`proxy.py`) can cross-check against a council API if one ever becomes available — but it is never required.
 
-## Generalised for any Blacktown address
+## A note on the Blacktown API
 
-Enter any street address in the Blacktown LGA and the app queries the Council's API for that property's actual scheduled collection dates — no hardcoded suburb logic.
+Blacktown City Council's [Bin collection days](https://www.blacktown.nsw.gov.au/Services/Waste-services-and-collection/Bin-collection-days) page uses a **client-side address widget** and does **not** expose a documented public JSON API. The endpoint the v1 proxy pointed at (`/api/v1/myblacktown/waste-services`) is not a real council endpoint and returns nothing — which is why v1 was silently running on its local fallback all along. v2 makes that local calculation the intended, reliable source. If you ever confirm a real endpoint, set `COUNCIL_API` in `proxy.py` and the app will pick it up automatically.
 
-## Project structure
-
-```
-blacktown-bin-day/
-├── src/
-│   └── index.html      # Single-file frontend app
-├── proxy.py            # Flask CORS proxy (runs on Pi alongside app)
-├── start.sh            # Launches proxy + static server + Chromium kiosk
-├── binday.service      # systemd unit for autostart on Pi boot
-└── README.md
-```
+Council-published fallbacks if you want to sanity-check your cycle: the printable **Area 1 / Area 2 2026 recycling calendars** (PDF) linked on the council page.
 
 ## Hardware
 
@@ -43,51 +38,32 @@ blacktown-bin-day/
 
 > Already have a spare tablet or monitor? Just point a browser at the Pi's IP — you only need the Pi + SD card (~$37).
 
-## Setup
+## Project structure
 
-### 1. Install dependencies
-
-```bash
-pip3 install flask requests
+```
+blacktown-bin-day/
+├── src/
+│   └── index.html      # Single-file frontend app (all logic lives here)
+├── proxy.py            # Optional Flask CORS proxy (not required)
+├── start.sh            # Launches proxy + static server + Chromium kiosk
+├── binday.service      # systemd unit for autostart on Pi boot
+├── docs/
+│   ├── INSTALL.md      # Pi setup + kiosk hardening
+│   └── DEPLOY.md       # Pushing updates to the Pi (GitHub / VS Code / PuTTY)
+├── CHANGELOG.md
+└── README.md
 ```
 
-### 2. Clone and configure
+## Quick start (any machine)
 
 ```bash
-git clone https://github.com/<your-username>/blacktown-bin-day.git
-cd blacktown-bin-day
-chmod +x start.sh
-```
-
-### 3. Run locally (any machine)
-
-```bash
-python3 proxy.py &
 python3 -m http.server 8080 --directory src/
-# Open http://localhost:8080 in browser
+# open http://localhost:8080, enter collection day + a recent Yellow bin date
 ```
 
-### 4. Deploy on Pi (autostart)
+## Deploy on the Pi
 
-```bash
-sudo cp binday.service /etc/systemd/system/
-sudo systemctl enable binday
-sudo systemctl start binday
-```
-
-The service starts on boot, launches the proxy and static server, then opens Chromium in kiosk mode.
-
-### 5. Enter your address
-
-On first load, enter your street address and house number. The app queries the Blacktown Council API and saves the result locally. No data leaves your network.
-
-## Fortnightly fallback
-
-If the proxy isn't running (or the Council API is unreachable), the app falls back to a locally-computed fortnightly cycle anchored to a known Yellow bin Tuesday (`2025-01-07`). Update `YELLOW_REF` in `index.html` if this reference date ever becomes stale.
-
-## Sharing with neighbours
-
-Each user enters their own address on first load. The app works for any property in the Blacktown LGA — just share the repo or host the `src/` folder on a local network.
+See [docs/INSTALL.md](docs/INSTALL.md) for first-time setup and [docs/DEPLOY.md](docs/DEPLOY.md) for pushing updates (GitHub, VS Code local, or PuTTY/SSH).
 
 ## Licence
 
